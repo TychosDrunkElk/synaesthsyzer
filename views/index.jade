@@ -1,0 +1,100 @@
+extends layout
+
+block content
+  h1= title
+
+  //- input#fileselect(type='file', accept='image/*', capture='camera')
+  #container
+    video#videoElement(autoplay='autoplay')
+  canvas#canvas(width='900', height='700')
+
+  script
+    var video = document.querySelector("#videoElement");
+
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia || navigator.oGetUserMedia;
+     
+    if (navigator.getUserMedia) {       
+        navigator.getUserMedia({video: true, audio: true}, handleVideo, videoError);
+    }
+    var fft;
+    function handleVideo(stream) {
+        // if found attach feed to video element
+        video.src = window.URL.createObjectURL(stream);
+        handleAudio(stream);
+    }
+    var analyser = null;
+    function handleAudio(stream) {
+      var context = new window.AudioContext();
+      var microphone = context.createMediaStreamSource(stream);
+      analyser = context.createAnalyser();
+      microphone.connect(analyser);
+      analyser.connect(context.destination);
+    }
+     
+    function videoError(e) {
+        // no webcam found - do something
+    }
+    var v,canvas,context,w,h,audioContext;
+
+    document.addEventListener('DOMContentLoaded', function(){
+        // when DOM loaded, get canvas 2D context and store width and height of element
+        v = document.getElementById('videoElement');
+        canvas = document.getElementById('canvas');
+        context = canvas.getContext('2d');
+        w = canvas.width;
+        h = canvas.height;
+
+        v.addEventListener('play', function(){
+            draw(this,context,w,h);
+        },false);
+
+    },false);
+
+    function draw(v,c,w,h) {
+        if(v.paused || v.ended) return false; // if no video, exit here
+        context.drawImage(v,0,0,w,h); // draw video feed to canvas
+
+        var data = new Uint8Array(255); 
+        analyser.getByteFrequencyData(data); 
+        var lowpass = _.reject(data, function (d) {
+            return d < 90 
+          });
+        var highpass = _.reject(data, function (d) {
+          return d > 160 
+        });
+
+        var midpass = _.reject(data, function (d) {
+          return (d > 90 && d < 160) 
+        });
+
+        console.log(highpass.length, midpass.length, lowpass.length);
+        var pixels = context.getImageData(0,0,w,h);
+        var filtered = threshold(pixels, highpass.length, midpass.length, lowpass.length);
+        context.putImageData(filtered, 0, 0)
+        setTimeout(draw,20,v,c,w,h);       
+    } 
+    var threshold = function(pixels, high, mid, low) {
+      var d = pixels.data;
+      for (var i=0; i<d.length; i+=4) {
+        var r = d[i];
+        var g = d[i+1];
+        var b = d[i+2];
+        var r1 = r*mid/255;
+        var g1 = g*high/255;
+        var b2 = b*low/255;
+        //- var v = (0.2126*r + 0.7152*g + 0.0722*b >= threshold) ? 255 : 0;
+        d[i] = r1;
+        d[i+1] = g1;
+        d[i+2] = b2;
+        //- d[i] = d[i+1] = d[i+2] = v
+      }
+      return pixels;
+    };
+
+    function average (arr)
+    {
+      return _.reduce(arr, function(memo, num)
+      {
+        return memo + num;
+      }, 0) / arr.length;
+    }
